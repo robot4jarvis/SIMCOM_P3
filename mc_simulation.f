@@ -10,7 +10,7 @@
 
 c     1. Defining dimensions
  
-      dimension r(3,1000)
+      dimension r(3,1000), Usamples(1000)
 
 c     2. Reading data and computing related quantities
 
@@ -51,9 +51,13 @@ c     5. Start the loop to generate new configurations
 
 
       isuccess = 0
+      isamp = 0
+      nsamp = int(ncycles/1000) ! Interval entre samples
       do icycle = 1,ncycles
          call moveparticle(npart, r, rc, box, deltax, beta, isuccess)
-c         call boundaryConds(npart, r, box)
+         call boundaryConds(npart, r, box)
+
+         if (mod(icycle, nsamp) == 0) call sample(isamp, Usamples)
 
       enddo
       print *, 'Success rate: ', int(100*isuccess/ncycles), "%"
@@ -252,3 +256,11 @@ c     (box with a corner at the origin)
       return
       end
 
+*********************************************************
+*********************************************************
+c              subroutine sample
+*********************************************************
+*********************************************************
+      subroutine sample(icycle, Usamples, rc, box)
+      implicit double precision(a-h,o-z)
+      dimension r(3,1000)

@@ -10,7 +10,7 @@
 
 c     1. Defining dimensions
  
-      dimension r(3,1000), Usamples(1000)
+      dimension r(3,1000), U_vals(1000), P_vals(1000)
 
 c     2. Reading data and computing related quantities
 
@@ -52,20 +52,34 @@ c     5. Start the loop to generate new configurations
 
       isuccess = 0
       isamp = 0
-      nsamp = int(ncycles/1000) ! Interval entre samples
+      nsamp = int(ncycles/1001) ! Interval entre samples
       do icycle = 1,ncycles
          call moveparticle(npart, r, rc, box, deltax, beta, isuccess)
          call boundaryConds(npart, r, box)
 
-         if (mod(icycle, nsamp) == 0) call sample(isamp, Usamples)
-
+         if (mod(icycle, nsamp) == 0) then
+            call sampleVals(isample, npart, r, rc, box, beta,
+     &                  U_vals, P_vals)
+         endif
+         if (isample>1000) then
+            print *, "Too many samples!"
+            exit
+         endif
       enddo
-      print *, 'Success rate: ', int(100*isuccess/ncycles), "%"
-
-
-      
       close(3)
       close(4)
+
+      print *, 'Success rate: ', int(100*isuccess/ncycles), "%"
+      print *, 'Number of samples:', isample
+      print *, 'Number of cycles:', icycle
+
+
+      print *, 'U mean: ', avg(U_vals,isample), "std: ", 
+     &          std(U_vals, isample)
+
+      print *, 'P mean: ', avg(P_vals,isample), "std: ", 
+     &          std(P_vals, isample)
+
 
 c     6. Saving last configuration in A and A/ps 
 
@@ -169,8 +183,8 @@ c      atom-atom interactions
 
       do js = 1,npart
          if (js == iSel)  cycle
-         call lj(iSel, js, r0, box, rc, U0)
-         call lj(iSel, js, rn, box, rc, Un)
+         call lj(iSel, js, r0, box, rc, U0, Pkin)
+         call lj(iSel, js, rn, box, rc, Un, Pkin)
          deltaU = deltaU + Un - U0
       end do
 
@@ -179,23 +193,25 @@ c      atom-atom interactions
 
 *********************************************************
 *********************************************************
-c              subroutine totEnergy
+c              subroutine getValues
 *********************************************************
 *********************************************************
-      subroutine totEnergy(npart, r, box, rc, Utot)
+      subroutine getValues(npart, r, box, rc, Utot, Pkin)
       implicit double precision(a-h,o-z)
       dimension r(3,1000)
 c     This subroutine calculates the energy of a configuration
 
 
-      Utot = 0.d0 
+      Utot = 0.d0
+      Pkin = 0.d0
 
 c      atom-atom interactions
       do is = 1,npart-1
 c         print *, 'Atom ', is, ' coords = ', r(1,is), r(2,is), r(3,is)
          do js = is+1,npart
-            call lj(is,js,r,box,rc,Uij)
+            call lj(is,js,r,box,rc,Uij,rFij)
             Utot = Utot + Uij
+            Pkin = Pkin + rFij/(3*box**3)
          end do
       end do
 
@@ -208,13 +224,14 @@ c         print *, 'Atom ', is, ' coords = ', r(1,is), r(2,is), r(3,is)
 c              subroutine Lennard-Jones
 *********************************************************
 *********************************************************
-      subroutine lj(is,js,r,box,rc,Uij)
+      subroutine lj(is,js,r,box,rc,Uij, rFij)
       implicit double precision(a-h,o-z)
       dimension r(3,1000), rij(3)
 
       rr2 = 0.d0
       Uij = 0.d0
-      rijl = 0
+      rijl = 0.d0
+      rFij = 0.d0
       do l = 1,3
          rijl = r(l,js) - r(l,is)
          rij(l) = rijl - box*dnint(rijl/box)
@@ -229,6 +246,7 @@ c              subroutine Lennard-Jones
          ynvrr12 = ynvrr6*ynvrr6
          forcedist = 24.d0*(2.d0*ynvrr12-ynvrr6)*ynvrr2
          Uij = 4.d0*(ynvrr12-ynvrr6)  
+         rFij = forcedist*rr2
       end if
 
       return
@@ -261,6 +279,46 @@ c     (box with a corner at the origin)
 c              subroutine sample
 *********************************************************
 *********************************************************
-      subroutine sample(icycle, Usamples, rc, box)
+      subroutine sampleVals(isample, npart, r, rc, box, beta,
+     &                  U_vals, P_vals)
       implicit double precision(a-h,o-z)
-      dimension r(3,1000)
+      dimension r(3,1000), U_vals(1000), P_vals(1000)
+      
+      Utot = 0.d0
+      Pkin = 0.d0
+      rho = npart/box**3
+
+      call getValues(npart, r, box, rc, Utot, Pkin)
+      U_vals(isample) = Utot
+      P_vals(isample) = Pkin + rho/beta
+
+      isample = isample + 1
+
+      end
+
+
+
+*********************************************************
+*********************************************************
+c              functions
+*********************************************************
+*********************************************************
+      double precision function avg(A, n)
+      implicit double precision(a-h,o-z)
+      dimension A(1000)
+
+      avg = 0.d0
+      do i = 1, n
+         avg = avg + A(i)
+      enddo
+      avg = avg/n
+      end function avg
+
+
+      double precision function std(A, n)
+      implicit double precision(a-h,o-z)
+      dimension A(1000)
+
+      std = 0
+      std = sqrt(std/n)
+      end function std

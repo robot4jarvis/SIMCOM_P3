@@ -1,9 +1,10 @@
-10000
+100000
 500
-1.d0
+0.7d0
 1.d0
 3.405d0,119.8d0
-1.d0
+0.1d0
+100
 
 ********************************************************************
 1.nconf(number of configurations)
@@ -12,6 +13,7 @@
 4.Pref
 5.sigma,epsil (LJ parameters in A and K)
 6. deltaX (reduced units)
+7. nhis
 
 
 Altres canvis a fer:

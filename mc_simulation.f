@@ -10,7 +10,7 @@
 
 c     1. Defining dimensions
  
-      dimension r(3,1000), U_vals(1000), P_vals(1000)
+      dimension r(3,1000), U_vals(1000), P_vals(1000), g(1000)
 
 c     2. Reading data and computing related quantities
 
@@ -20,7 +20,9 @@ c     2. Reading data and computing related quantities
       read(1,*) tref
       read(1,*) pref 
       read(1,*) sigma,epsil
-      read(1,*) deltax 
+      read(1,*) deltax
+      read(1,*) nhis 
+
 
       close(1)
 
@@ -37,7 +39,12 @@ c     3. Reading initial configuration (positions, velocities) in A and A/ps
       end do         
       read(2,*) box
       close(2)
-c
+c     
+
+
+      do is = 1, nhis
+            g(is) = 0
+      enddo
 c     Opening files to write results
 c
       open(3,file='energy-leap.dat',status='unknown')
@@ -52,14 +59,14 @@ c     5. Start the loop to generate new configurations
 
       isuccess = 0
       isamp = 0
-      nsamp = int(ncycles/1001) ! Interval entre samples
+      nsamp = int(ncycles/999) ! Interval entre samples
+
       do icycle = 1,ncycles
          call moveparticle(npart, r, rc, box, deltax, beta, isuccess)
-         call boundaryConds(npart, r, box)
 
          if (mod(icycle, nsamp) == 0) then
-            call sampleVals(isample, npart, r, rc, box, beta,
-     &                  U_vals, P_vals)
+            call sampleVals(isample, npart, nhis, r, rc, box, beta,
+     &                  U_vals, P_vals, g)
          endif
          if (isample>1000) then
             print *, "Too many samples!"
@@ -69,16 +76,23 @@ c     5. Start the loop to generate new configurations
       close(3)
       close(4)
 
-      print *, 'Success rate: ', int(100*isuccess/ncycles), "%"
+      isample = isample - 1
+      print *, 'Success rate: ', int(abs(100*isuccess/ncycles)), "%"
       print *, 'Number of samples:', isample
       print *, 'Number of cycles:', icycle
 
+      uAvg = 0.d0
+      pAvg = 0.d0
+      uStd = 0.d0
+      pStd = 0.d0
+      call stats(U_vals, isample, uAvg, uStd)
+      call stats(P_vals, isample, pAvg, pStd)
 
-      print *, 'U mean: ', avg(U_vals,isample), "std: ", 
-     &          std(U_vals, isample)
+      print *, 'U mean: ', uAvg, "std: ", uStd, " (", 
+     &      int(100*uStd/uAvg), "% )"
 
-      print *, 'P mean: ', avg(P_vals,isample), "std: ", 
-     &          std(P_vals, isample)
+      print *, 'P mean: ', pAvg, "std: ", pStd, " (", 
+     &      int(100*pStd/pAvg), "% )"
 
 
 c     6. Saving last configuration in A and A/ps 
@@ -91,6 +105,21 @@ c     6. Saving last configuration in A and A/ps
       write(11,*) box*sigma
       close(11)
 
+      delg = box/(2.d0*nhis) ! bin size
+      pi = 4.d0*DATAN(1.d0)
+      rho = npart / box**3
+      do is = 1, nhis
+            vb = ((is+1)**3 - is**3)*delg**3
+            rnid = (4.d0/3.d0)*pi*vb*rho
+            g(is) = g(is) /(isample * npart*rnid)
+      end do
+
+      open(5,file='g.data',status='unknown')
+      do is = 1,nhis
+         write(5,*) delg*dfloat(is-1), g(is)
+      end do         
+      close(5)
+
       stop
       end
 
@@ -99,7 +128,6 @@ c     6. Saving last configuration in A and A/ps
 c              subroutine reduced
 *********************************************************
 *********************************************************
-
       subroutine reduced(npart,r,box,sigma)
       implicit double precision(a-h,o-z)
       dimension r(3,1000)
@@ -144,16 +172,20 @@ c               variablen -> new attempted values
          rn(l,iSel) = r0(l,iSel) + deltax*(rand()-0.d5)
       enddo
 
+      call boundaryConds(npart, rn, box)
+
+
       ! Energy difference
-c      call totEnergy(npart, r0, box, rc, Utot0)
-c      call totEnergy(npart, rn, box, rc, Utotn)
+c      call getValues(npart, r0, box, rc, Utot0, Pkin0)
+c      call getValues(npart, rn, box, rc, Utotn, Pkin0)
       call deltaEnergy(npart, r0, rn, iSel, box, rc, deltaU)
 
-c      Udelta = Utotn - Utot0
-      acc = exp(-beta*deltaU)
+c      deltaU = Utotn - Utot0
+      acc = exp(-beta*deltaU) ! Acceptance probability.
+c     If deltaU<0 -> -beta*deltaU >0 -> acc > 0
 
-      if(rand() >= acc) then
-         do i = 1, npart
+      if(rand() <= acc) then
+         do i = 1, npart ! We accept
             do l = 1,3
                r0(l,i) = rn(l,i)
             enddo
@@ -183,8 +215,8 @@ c      atom-atom interactions
 
       do js = 1,npart
          if (js == iSel)  cycle
-         call lj(iSel, js, r0, box, rc, U0, Pkin)
-         call lj(iSel, js, rn, box, rc, Un, Pkin)
+         call lj(iSel, js, r0, rr, box, rc, U0, Pkin)
+         call lj(iSel, js, rn, rr, box, rc, Un, Pkin)
          deltaU = deltaU + Un - U0
       end do
 
@@ -196,22 +228,31 @@ c      atom-atom interactions
 c              subroutine getValues
 *********************************************************
 *********************************************************
-      subroutine getValues(npart, r, box, rc, Utot, Pkin)
+      subroutine getValues(npart, nhis, r, box, rc, Utot, Pkin, g)
       implicit double precision(a-h,o-z)
-      dimension r(3,1000)
+      dimension r(3,1000), g(1000)
 c     This subroutine calculates the energy of a configuration
 
 
       Utot = 0.d0
       Pkin = 0.d0
+      delg = box/(2.d0*nhis) ! bin size
+
 
 c      atom-atom interactions
       do is = 1,npart-1
 c         print *, 'Atom ', is, ' coords = ', r(1,is), r(2,is), r(3,is)
          do js = is+1,npart
-            call lj(is,js,r,box,rc,Uij,rFij)
+            call lj(is,js,r, rr, box,rc,Uij,rFij)
             Utot = Utot + Uij
             Pkin = Pkin + rFij/(3*box**3)
+
+            if(rr < box/2) then
+                  ig = int(rr/delg)
+                  if ((ig>0)) then
+                     g(ig) = g(ig) + 2
+                  endif
+               endif
          end do
       end do
 
@@ -224,7 +265,7 @@ c         print *, 'Atom ', is, ' coords = ', r(1,is), r(2,is), r(3,is)
 c              subroutine Lennard-Jones
 *********************************************************
 *********************************************************
-      subroutine lj(is,js,r,box,rc,Uij, rFij)
+      subroutine lj(is,js,r, rr, box,rc,Uij, rFij)
       implicit double precision(a-h,o-z)
       dimension r(3,1000), rij(3)
 
@@ -265,8 +306,8 @@ c     (box with a corner at the origin)
 
       do i = 1, npart
          do l = 1,3
-            if(r(l,i) < 0 ) r(l,i) = r(l,i) + box
-            if(r(l,i) > 0 ) r(l,i) = r(l,i) - box
+            if(r(l,i) < 0 ) r(l,i) = r(l,i) + box*ceiling(-r(l,i)/box)
+            if(r(l,i) > 0 ) r(l,i) = r(l,i) - box*floor(r(l,i)/box)
 
          enddo
       end do
@@ -279,16 +320,19 @@ c     (box with a corner at the origin)
 c              subroutine sample
 *********************************************************
 *********************************************************
-      subroutine sampleVals(isample, npart, r, rc, box, beta,
-     &                  U_vals, P_vals)
+      subroutine sampleVals(isample, npart, nhis, r, rc, box, beta,
+     &                  U_vals, P_vals, g)
       implicit double precision(a-h,o-z)
-      dimension r(3,1000), U_vals(1000), P_vals(1000)
+      dimension r(3,1000), U_vals(1000), P_vals(1000), g(1000)
       
       Utot = 0.d0
       Pkin = 0.d0
       rho = npart/box**3
 
-      call getValues(npart, r, box, rc, Utot, Pkin)
+      call getValues(npart, nhis, r, box, rc, Utot, Pkin, g)
+      
+
+
       U_vals(isample) = Utot
       P_vals(isample) = Pkin + rho/beta
 
@@ -303,22 +347,16 @@ c              subroutine sample
 c              functions
 *********************************************************
 *********************************************************
-      double precision function avg(A, n)
+      subroutine stats(A, n, avg, std)
       implicit double precision(a-h,o-z)
       dimension A(1000)
-
       avg = 0.d0
+      std = 0.d0
+      x2 = 0.d0
+
       do i = 1, n
-         avg = avg + A(i)
+            avg = avg + A(i) / n
+            x2 = x2 + A(i)**2 / n
       enddo
-      avg = avg/n
-      end function avg
-
-
-      double precision function std(A, n)
-      implicit double precision(a-h,o-z)
-      dimension A(1000)
-
-      std = 0
-      std = sqrt(std/n)
-      end function std
+      std = sqrt(x2 - avg**2)
+      end 

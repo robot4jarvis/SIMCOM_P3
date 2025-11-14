@@ -70,7 +70,7 @@ c     Pressure tail correction assuming constant g(r) = 1 for LJ potential
 
       dU = 8.d0*pi/3.d0 * rho  * npart * (1.d0/3.d0 * (1.d0/rc)**6 - 1)
      & * (1.d0/rc)**3
-      print *, 'Emergy correction: ', dU
+      print *, 'Energy correction: ', dU
 
 
       do icycle = 1,ncycles
@@ -185,7 +185,7 @@ c               variablen -> new attempted values
       if (iSel > npart) iSel = npart
 
       do i = 1, npart
-         do l = 1,3
+        do l = 1,3
             rn(l,i) = r0(l,i)
          enddo
       enddo
@@ -195,26 +195,34 @@ c               variablen -> new attempted values
          rn(l,iSel) = r0(l,iSel) + deltax*(rand()-0.5d0)
       enddo
 
-      call boundaryConds(npart, rn, box)
+c      call boundaryConds(npart, rn, box)
 
 
       ! Energy difference
-      call getValues(npart, nhis, r0, box, rc, U0, Pkin, g)
-      call getValues(npart, nhis, rn, box, rc, Un, Pkin, g)
-c      call deltaEnergy(npart, r0, rn, iSel, box, rc, deltaU)
+c      call getValues(npart, nhis, r0, box, rc, U0, Pkin, g)
+c      call getValues(npart, nhis, rn, box, rc, Un, Pkin, g)
+      call Energy(npart, r0, iSel, box, rc, U0)
+      call Energy(npart, rn, iSel, box, rc, Un)
+      call deltaEnergy(npart, r0, rn, iSel, box, rc, deltaU)
+      deltaU2=Un-U0
 
-      deltaU = Utotn - Utot0
-      acc = exp(-beta*deltaU) ! Acceptance probability.
+
+c      deltaU = U0 - Un
+      acc = exp(-beta*deltaU2) ! Acceptance probability.
 c     If deltaU<0 -> -beta*deltaU >0 -> acc > 0
 
-      if(rand() <= acc) then
+      roll = rand()
+      if(roll<= acc) then
          do i = 1, npart ! We accept
             do l = 1,3
                r0(l,i) = rn(l,i)
             enddo
          enddo
+         call boundaryConds(npart, r0, box)
          isuccess = isuccess + 1
       endif ! We do nothing
+
+      write(6,*) isel,  U0, Un, deltaU, deltau2, acc, roll, isuccess
 
       end
 
@@ -243,6 +251,35 @@ c      atom-atom interactions
             call lj(iSel, js, r0, rr, box, rc, U0, Pkin)
             call lj(iSel, js, rn, rr, box, rc, Un, Pkin)
             deltaU = deltaU + Un - U0
+
+         end if
+      end do
+      return
+      end
+
+*********************************************************
+*********************************************************
+c              subroutine deltaEnergy
+*********************************************************
+*********************************************************
+      subroutine Energy(npart, r0, iSel,box, rc, u)
+      implicit double precision(a-h,o-z)
+      dimension rn(3,1000), r0(3,1000)
+c     This subroutine calculates the energy difference between two
+c     configurations where the only difference is particle i
+
+
+      U = 0.d0
+
+c      atom-atom interactions
+
+      do js = 1,npart
+         if (js == iSel)  then
+            cycle
+         else
+            call lj(iSel, js, r0, rr, box, rc, dU, Pkin)
+            U = U + dU
+
          end if
       end do
       return

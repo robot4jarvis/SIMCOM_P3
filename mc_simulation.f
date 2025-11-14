@@ -173,7 +173,7 @@ c              subroutine moveparticle
       subroutine moveparticle(npart, r0, rc, box, deltax,
      & beta, isuccess)
       implicit double precision(a-h,o-z)
-      dimension r0(3,1000), rn(3,1000) 
+      dimension r0(3,1000), rn(3,1000), g(1000)
 c     This subroutine choses a particle at random and attempts a move
 
 c     Notation: variable0 -> Old values
@@ -199,11 +199,11 @@ c               variablen -> new attempted values
 
 
       ! Energy difference
-c      call getValues(npart, r0, box, rc, Utot0, Pkin0)
-c      call getValues(npart, rn, box, rc, Utotn, Pkin0)
-      call deltaEnergy(npart, r0, rn, iSel, box, rc, deltaU)
+      call getValues(npart, nhis, r0, box, rc, U0, Pkin, g)
+      call getValues(npart, nhis, rn, box, rc, Un, Pkin, g)
+c      call deltaEnergy(npart, r0, rn, iSel, box, rc, deltaU)
 
-c      deltaU = Utotn - Utot0
+      deltaU = Utotn - Utot0
       acc = exp(-beta*deltaU) ! Acceptance probability.
 c     If deltaU<0 -> -beta*deltaU >0 -> acc > 0
 

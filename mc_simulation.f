@@ -61,14 +61,14 @@ c     5. Start the loop to generate new configurations
       isamp = 0
       nsamp = int(ncycles/999) ! Interval entre samples
       pi = 4.d0*DATAN(1.d0)
-      rho = npart / box**3
+      rho = npart / (box**3)
 
 c     Pressure tail correction assuming constant g(r) = 1 for LJ potential
       dP = 16.d0*pi*(rho ** 2)*(1**6)*1/(3.d0 * (rc**3))
      & * ((1.d0/3.d0)*(1/rc)**6 - 1.d0)
       print *, 'Pressure correction: ', dP
 
-      dU = 8.d0*pi/3.d0 * rho  * npart * (1.d0/3.d0 * (1.d0/rc)**6 - 1)
+      dU = 8.d0*pi/3.d0 * rho  * npart *(1.d0/3.d0 * (1.d0/rc)**6 - 1) 
      & * (1.d0/rc)**3
       print *, 'Energy correction: ', dU
 
@@ -97,6 +97,7 @@ c     Pressure tail correction assuming constant g(r) = 1 for LJ potential
       pAvg = 0.d0
       uStd = 0.d0
       pStd = 0.d0
+
       call stats(U_vals, isample, uAvg, uStd)
       call stats(P_vals, isample, pAvg, pStd)
 
@@ -120,7 +121,7 @@ c     6. Saving last configuration in A and A/ps
       delg = box/(2.d0*nhis) ! bin size
       do is = 1, nhis
             vb = ((is+1)**3 - is**3)*delg**3
-            rnid = (4.d0/3.d0)*pi*vb*rho
+            rnid = (4.d0/3.d0)*3.14159265359*vb*rho
             g(is) = g(is) /(isample * npart*rnid)
       end do
 
@@ -133,7 +134,7 @@ c     6. Saving last configuration in A and A/ps
       open(7,file='U.data',status='unknown')
       do is = 1,1000
          write(7,*) is, U_vals(is)
-      end do         
+      end do
       close(7)
 
       open(8,file='P.data',status='unknown')
@@ -201,14 +202,14 @@ c      call boundaryConds(npart, rn, box)
       ! Energy difference
 c      call getValues(npart, nhis, r0, box, rc, U0, Pkin, g)
 c      call getValues(npart, nhis, rn, box, rc, Un, Pkin, g)
-      call Energy(npart, r0, iSel, box, rc, U0)
-      call Energy(npart, rn, iSel, box, rc, Un)
+c      call Energy(npart, r0, iSel, box, rc, U0)
+c      call Energy(npart, rn, iSel, box, rc, Un)
       call deltaEnergy(npart, r0, rn, iSel, box, rc, deltaU)
-      deltaU2=Un-U0
+c      deltaU2=Un-U0
 
 
 c      deltaU = U0 - Un
-      acc = exp(-beta*deltaU2) ! Acceptance probability.
+      acc = exp(-beta*deltaU) ! Acceptance probability.
 c     If deltaU<0 -> -beta*deltaU >0 -> acc > 0
 
       roll = rand()
@@ -222,7 +223,7 @@ c     If deltaU<0 -> -beta*deltaU >0 -> acc > 0
          isuccess = isuccess + 1
       endif ! We do nothing
 
-      write(6,*) isel,  U0, Un, deltaU, deltau2, acc, roll, isuccess
+c      write(6,*) isel,  U0, Un, deltaU, deltau2, acc, roll, isuccess
 
       end
 
@@ -233,11 +234,9 @@ c              subroutine deltaEnergy
 *********************************************************
       subroutine deltaEnergy(npart, r0, rn, iSel,box, rc, deltaU)
       implicit double precision(a-h,o-z)
-      dimension rn(3,1000), r0(3,1000)
+      dimension rn(3,1000), r0(3,1000), g(1000)
 c     This subroutine calculates the energy difference between two
 c     configurations where the only difference is particle i
-
-
       deltaU = 0.d0 
       U0 = 0.d0
       Un = 0.d0
@@ -264,14 +263,14 @@ c              subroutine deltaEnergy
 *********************************************************
       subroutine Energy(npart, r0, iSel,box, rc, u)
       implicit double precision(a-h,o-z)
-      dimension rn(3,1000), r0(3,1000)
+      dimension rn(3,1000), r0(3,1000), g(1000)
 c     This subroutine calculates the energy difference between two
 c     configurations where the only difference is particle i
 
 
       U = 0.d0
 
-c      atom-atom interactions
+c     atom-atom interactions
 
       do js = 1,npart
          if (js == iSel)  then
@@ -298,7 +297,7 @@ c     This subroutine calculates the energy of a configuration
 
       Utot = 0.d0
       Pkin = 0.d0
-      delg = box/(2.d0*nhis) ! bin size
+      rr = 0.d0
 
 
 c      atom-atom interactions
@@ -308,15 +307,24 @@ c         print *, 'Atom ', is, ' coords = ', r(1,is), r(2,is), r(3,is)
             call lj(is,js,r, rr, box,rc,Uij,rFij)
             Utot = Utot + Uij
             Pkin = Pkin + rFij/(3*box**3)
+            delg = box/(2.d0*nhis) ! bin size
+
+            ig = int(rr/delg)
 
             if(rr < box/2.d0) then
-                  ig = int(rr/delg)
-                  if ((ig>0)) then
+               if (ig>0) then
                      g(ig) = g(ig) + 2
-                  endif
+             !        write(6, *) is, js, rr, ig, delg
+
                endif
+            endif
          end do
       end do
+
+
+
+
+
 
 
       return
@@ -329,7 +337,7 @@ c              subroutine Lennard-Jones
 *********************************************************
       subroutine lj(is,js,r, rr, box,rc,Uij, rFij)
       implicit double precision(a-h,o-z)
-      dimension r(3,1000), rij(3)
+      dimension r(3,1000), rij(3), g(1000)
 
       rr2 = 0.d0
       Uij = 0.d0
@@ -338,7 +346,7 @@ c              subroutine Lennard-Jones
       do l = 1,3
          rijl = r(l,js) - r(l,is)
          rij(l) = rijl - box*dnint(rijl/box)
-         rr2 = rr2 + rijl**2
+         rr2 = rr2 + rij(l)**2
       end do
 
       rr = dsqrt(rr2)
@@ -351,6 +359,8 @@ c              subroutine Lennard-Jones
          Uij = 4.d0*(ynvrr12-ynvrr6)  
          rFij = forcedist*rr2
       end if
+
+
 
       return
       end
@@ -383,9 +393,10 @@ c              subroutine sample
 *********************************************************
       subroutine sampleVals(isample, npart, nhis, r, rc, box, beta,
      &                  U_vals, P_vals, g, dU, dP)
+
       implicit double precision(a-h,o-z)
       dimension r(3,1000), U_vals(1000), P_vals(1000), g(1000)
-      
+      write(6, *) "Sample: ", isample
       Utot = 0.d0
       Pkin = 0.d0
       rho = npart/box**3

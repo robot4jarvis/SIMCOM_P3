@@ -1,14 +1,14 @@
 100000
 500
-0.7d0
+0.71d0
 1.d0
 3.405d0,119.8d0
-0.1d0
+0.15d0
 100
 
 ********************************************************************
 1.nconf(number of configurations)
-2.natoms
+2.npart
 3.tref (Temperatura de referència (reduced))
 4.Pref
 5.sigma,epsil (LJ parameters in A and K)

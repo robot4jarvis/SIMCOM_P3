@@ -60,13 +60,25 @@ c     5. Start the loop to generate new configurations
       isuccess = 0
       isamp = 0
       nsamp = int(ncycles/999) ! Interval entre samples
+      pi = 4.d0*DATAN(1.d0)
+      rho = npart / box**3
+
+c     Pressure tail correction assuming constant g(r) = 1 for LJ potential
+      dP = 16.d0*pi*(rho ** 2)*(1**6)*1/(3.d0 * (rc**3))
+     & * ((1.d0/3.d0)*(1/rc)**6 - 1.d0)
+      print *, 'Pressure correction: ', dP
+
+      dU = 8.d0*pi/3.d0 * rho  * npart * (1.d0/3.d0 * (1.d0/rc)**6 - 1)
+     & * (1.d0/rc)**3
+      print *, 'Emergy correction: ', dU
+
 
       do icycle = 1,ncycles
          call moveparticle(npart, r, rc, box, deltax, beta, isuccess)
 
          if (mod(icycle, nsamp) == 0) then
             call sampleVals(isample, npart, nhis, r, rc, box, beta,
-     &                  U_vals, P_vals, g)
+     &                  U_vals, P_vals, g, dU, dP)
          endif
          if (isample>1000) then
             print *, "Too many samples!"
@@ -106,8 +118,6 @@ c     6. Saving last configuration in A and A/ps
       close(11)
 
       delg = box/(2.d0*nhis) ! bin size
-      pi = 4.d0*DATAN(1.d0)
-      rho = npart / box**3
       do is = 1, nhis
             vb = ((is+1)**3 - is**3)*delg**3
             rnid = (4.d0/3.d0)*pi*vb*rho
@@ -119,6 +129,18 @@ c     6. Saving last configuration in A and A/ps
          write(5,*) delg*dfloat(is-1), g(is)
       end do         
       close(5)
+
+      open(7,file='U.data',status='unknown')
+      do is = 1,1000
+         write(7,*) is, U_vals(is)
+      end do         
+      close(7)
+
+      open(8,file='P.data',status='unknown')
+      do is = 1,1000
+         write(8,*) is, P_vals(is)
+      end do         
+      close(8)
 
       stop
       end
@@ -142,6 +164,7 @@ c              subroutine reduced
 
       return
       end
+
 *********************************************************
 *********************************************************
 c              subroutine moveparticle
@@ -169,7 +192,7 @@ c               variablen -> new attempted values
 
       ! Move a particle at random
       do l = 1,3
-         rn(l,iSel) = r0(l,iSel) + deltax*(rand()-0.d5)
+         rn(l,iSel) = r0(l,iSel) + deltax*(rand()-0.5d0)
       enddo
 
       call boundaryConds(npart, rn, box)
@@ -214,12 +237,14 @@ c     configurations where the only difference is particle i
 c      atom-atom interactions
 
       do js = 1,npart
-         if (js == iSel)  cycle
-         call lj(iSel, js, r0, rr, box, rc, U0, Pkin)
-         call lj(iSel, js, rn, rr, box, rc, Un, Pkin)
-         deltaU = deltaU + Un - U0
+         if (js == iSel)  then
+            cycle
+         else
+            call lj(iSel, js, r0, rr, box, rc, U0, Pkin)
+            call lj(iSel, js, rn, rr, box, rc, Un, Pkin)
+            deltaU = deltaU + Un - U0
+         end if
       end do
-
       return
       end
 
@@ -247,7 +272,7 @@ c         print *, 'Atom ', is, ' coords = ', r(1,is), r(2,is), r(3,is)
             Utot = Utot + Uij
             Pkin = Pkin + rFij/(3*box**3)
 
-            if(rr < box/2) then
+            if(rr < box/2.d0) then
                   ig = int(rr/delg)
                   if ((ig>0)) then
                      g(ig) = g(ig) + 2
@@ -307,8 +332,7 @@ c     (box with a corner at the origin)
       do i = 1, npart
          do l = 1,3
             if(r(l,i) < 0 ) r(l,i) = r(l,i) + box*ceiling(-r(l,i)/box)
-            if(r(l,i) > 0 ) r(l,i) = r(l,i) - box*floor(r(l,i)/box)
-
+            if(r(l,i) > 0 ) r(l,i) = r(l,i) - box*floor(r(l,i)/box) 
          enddo
       end do
 
@@ -321,7 +345,7 @@ c              subroutine sample
 *********************************************************
 *********************************************************
       subroutine sampleVals(isample, npart, nhis, r, rc, box, beta,
-     &                  U_vals, P_vals, g)
+     &                  U_vals, P_vals, g, dU, dP)
       implicit double precision(a-h,o-z)
       dimension r(3,1000), U_vals(1000), P_vals(1000), g(1000)
       
@@ -333,8 +357,8 @@ c              subroutine sample
       
 
 
-      U_vals(isample) = Utot
-      P_vals(isample) = Pkin + rho/beta
+      U_vals(isample) = Utot + dU
+      P_vals(isample) = Pkin + rho/beta + dP
 
       isample = isample + 1
 

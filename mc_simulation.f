@@ -18,17 +18,18 @@ c     2. Reading data and computing related quantities
       open(1,file='leap-lj.data',status='old')
       read(1,*) ncycles
       read(1,*) npart
-      read(1,*) tref
-      read(1,*) pref 
+      read(1,*) nhis
       read(1,*) sigma,epsil
       read(1,*) deltax
-      read(1,*) nhis 
+      read(1,*) box
+      read(1,*) tref
+      read(1,*) rho
+      read(1,*) rc
 
 
       close(1)
-
+      box = 0.d0
       nf = 3*npart-3 !number of degrees of freedom 
-      rc = 2.5d0 !sigma = range of the potential in reduced units
       beta = 1.d0 / tref
 
 c     3. Reading initial configuration (positions, velocities) in A and A/ps
@@ -38,7 +39,7 @@ c     3. Reading initial configuration (positions, velocities) in A and A/ps
          read(2,*) (r(l,is),l=1,3)
          read(2,*) 
       end do         
-      read(2,*) box
+c      read(2,*) box
       close(2)
 c     
 
@@ -54,6 +55,7 @@ c
 c     4. Change to reduced units
 
       call reduced(npart,r,box,sigma)
+      box = (npart/rho)**(1/3.d0)
 
 c     5. Start the loop to generate new configurations 
 
@@ -64,6 +66,12 @@ c     5. Start the loop to generate new configurations
       pi = 4.d0*DATAN(1.d0)
       rho = npart / (box**3)
 
+c     Stabilize
+c      do icycle = 1, 10000
+c            call moveparticle(npart, r, rc, box, deltax, beta, isuccess)
+c      enddo  
+
+      isuccess = 0
 
 
       do icycle = 1,ncycles
@@ -86,6 +94,9 @@ c     5. Start the loop to generate new configurations
       print *, 'Number of samples:', isample
       print *, 'Number of cycles:', icycle
       print *, 'Reduced density:', rho
+      print *, 'Reduced temperature:', tref
+      print *, 'Reduced cutoff:', rc
+
 
       uAvg = 0.d0
       pAvg = 0.d0
@@ -101,8 +112,8 @@ c     Pressure tail correction assuming constant g(r) = 1 for LJ potential
       dU = 8.d0*pi/3.d0 * rho  * npart *(1.d0/3.d0 * (1.d0/rc)**6 - 1) 
      & * (1.d0/rc)**3
 
-      print *, 'Energy correction: ', dU
-      print *, 'Pressure correction: ', dP
+      print *, '  -  Energy tail correction: ', dU
+      print *, '  -  Pressure tail correction: ', dP
 
 
       call stats(U_vals, isample, uAvg, uStd)
@@ -110,11 +121,13 @@ c     Pressure tail correction assuming constant g(r) = 1 for LJ potential
       uAvg = uAvg + dU
       pAvg = pAvg + dP
 
-      print *, 'U mean: ', uAvg, "std: ", uStd, " (", 
+      print *, '  -  Energy mean: ', uAvg, "std: ", uStd, " (", 
      &      int(100*uStd/uAvg), "% )"
 
-      print *, 'P mean: ', pAvg, "std: ", pStd, " (", 
+      print *, '  -  Pressure mean: ', pAvg, "std: ", pStd, " (", 
      &      int(100*pStd/pAvg), "% )"
+
+      print *, '  -  Energy per particle: ', uAvg/nPart
 
 
 c     6. Saving last configuration in A and A/ps 
@@ -141,6 +154,9 @@ c     6. Saving last configuration in A and A/ps
       ! Hacemos la integrales
 
       U_int = 2.d0*pi*rho*npart*tegrate_simpson(Ur, delg, nhis)
+c      U_int = 2.d0*pi*rho*npart*quadrature(Ur, rhis, nhis)
+c      P_int = rho/beta 
+c     & - 2.d0*pi/3.d0 * rho**2 * quadrature(dUdr, rhis, nhis)
       P_int = rho/beta
      & - 2.d0*pi/3.d0 * rho**2 * tegrate_simpson(dUdr, delg, nhis)
       
@@ -154,14 +170,28 @@ c     6. Saving last configuration in A and A/ps
 
       print *, "====== Using integration of g(r) ======"
 
-      print *, 'Energy correction for integrated U: ', dU_int
-      print *, 'Pressure correction for integrated P: ', dP_int
+      print *, '  -  Energy tail correction: ', dU_int
+      print *, '  -  Pressure tail correction: ', dP_int
 
 
       U_int = U_int + dU_int
       P_int = P_int + dP_int
-      print*, "Total energy using integration, U = ", U_int 
-      print*, "Total pressure using integration, P = ", P_int 
+      print*, "  -  Energy integrated: ", U_int 
+      print*, "  -  Pressure integrated: ", P_int 
+      print*, "  -  Energy per particle: ", U_int/nPart
+
+c      print *, "====== DATA FROM EXERCISE 2 ======"
+
+c      print *, '  -  Energy: -3023.52107866799'
+c      print *, '  -  Pressure: -0.252452629317419'
+c      print *, '  -  Temperature: 0.712296568323566 '
+
+
+
+c ============ DATA FROM EXERCISE 2 =======      
+c     Average Pot Energy:   -3023.52107866799     
+c     Average Temperature:   0.712296568323566     
+c     Average Pressure:  -0.252452629317419
 
       open(5,file='g.data',status='unknown')
       do is = 1,nhis
@@ -308,7 +338,7 @@ c         print *, 'Atom ', is, ' coords = ', r(1,is), r(2,is), r(3,is)
          do js = is+1,npart
             call lj(is,js,r, rr, box,rc,Uij,rFij)
             Utot = Utot + Uij
-            Pkin = Pkin + rFij/(3*box**3)
+            Pkin = Pkin + rFij/(3.d0*(box**3))
 
             ig = int(rr/delg)
 
@@ -324,7 +354,7 @@ c         print *, 'Atom ', is, ' coords = ', r(1,is), r(2,is), r(3,is)
 *********************************************************
       subroutine lj(is,js,r, rr, box,rc,Uij, rFij)
       implicit double precision(a-h,o-z)
-      dimension r(3,1000), rij(3), g(1000)
+      dimension r(3,1000), rij(3)
 
       rr2 = 0.d0
       Uij = 0.d0
@@ -342,9 +372,8 @@ c         print *, 'Atom ', is, ' coords = ', r(1,is), r(2,is), r(3,is)
          ynvrr2 = 1.d0/rr2
          ynvrr6 = ynvrr2*ynvrr2*ynvrr2
          ynvrr12 = ynvrr6*ynvrr6
-         forcedist = 24.d0*(2.d0*ynvrr12-ynvrr6)*ynvrr2
+         rFij = 24.d0*ynvrr6*(2.d0*ynvrr6-1)
          Uij = 4.d0*(ynvrr12-ynvrr6)  
-         rFij = forcedist*rr2
       end if
 
 
@@ -434,12 +463,28 @@ c              functions
 
     
 
-      tegrate_simpson = 0.0
+      tegrate_simpson = 0.d0
 
       do i = 2, N-1, 2
             tegrate_simpson = tegrate_simpson + 
-     &      dt * (1.0/3.0* x(i-1) + 4.0/3.0 * x(i)+ 1.0/3.0 * x(i+1))
+     &  dt * (1.d0/3.d0* x(i-1) + 4.d0/3.d0 * x(i)+ 1.d0/3.d0 * x(i+1))
       end do
 
       return
+      end
+
+      double precision function quadrature(x, t, N) ! Formula de quadratura cutre cutre
+      implicit double precision(a-h,o-z)
+      dimension x(1000), t(1000)
+
+      val = 0.d0
+
+      do i = 1,N-1
+            val = val + (x(i+1)+x(i))*(t(i+1)-t(i))/2.d0
+      enddo
+
+      quadrature = val
+
+      return
+
       end

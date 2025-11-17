@@ -1,24 +1,32 @@
 100000
 500
-2.0d0
-1.d0
+800
 3.405d0,119.8d0
 0.15d0
-100
+28.6943545639531d0
+2.0
+0.5
+5.0
 
 ********************************************************************
-1.nconf(number of configurations)
+1.ncycles (number of configurations)
 2.npart
-3.tref (Temperatura de referència (reduced))
-4.Pref
-5.sigma,epsil (LJ parameters in A and K)
-6. deltaX (reduced units)
-7. nhis
+3. nhis
+4.sigma,epsil (LJ parameters in A and K)
+5. deltaX (reduced units)
+6. box 28.694354563953098 (not used)
+7.tref (Temperatura de referència (reduced))
+8. rho reduced 0.83547213920457941
+9. rc
 
 
-Altres canvis a fer:
-- Ignorar les velocitats
-- Eliminar subrutines forces, velpos, etc
-- Crear (i guardar) configuracions amb només posicions
-- Eliminar time i velocitats de les normalitzacions
-- mirar presentacions
+Default:
+
+100000
+500
+800
+3.405d0,119.8d0
+0.15d0
+28.6943545639531d0
+0.712296568323566d0
+0.83547213920457941

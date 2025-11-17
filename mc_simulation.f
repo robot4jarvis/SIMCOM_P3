@@ -64,14 +64,6 @@ c     5. Start the loop to generate new configurations
       pi = 4.d0*DATAN(1.d0)
       rho = npart / (box**3)
 
-c     Pressure tail correction assuming constant g(r) = 1 for LJ potential
-      dP = 16.d0*pi*(rho ** 2)*(1**6)*1/(3.d0 * (rc**3))
-     & * ((1.d0/3.d0)*(1/rc)**6 - 1.d0)
-      print *, 'Pressure correction: ', dP
-
-      dU = 8.d0*pi/3.d0 * rho  * npart *(1.d0/3.d0 * (1.d0/rc)**6 - 1) 
-     & * (1.d0/rc)**3
-      print *, 'Energy correction: ', dU
 
 
       do icycle = 1,ncycles
@@ -93,11 +85,25 @@ c     Pressure tail correction assuming constant g(r) = 1 for LJ potential
       print *, 'Success rate: ', int(abs(100*isuccess/ncycles)), "%"
       print *, 'Number of samples:', isample
       print *, 'Number of cycles:', icycle
+      print *, 'Reduced density:', rho
 
       uAvg = 0.d0
       pAvg = 0.d0
       uStd = 0.d0
       pStd = 0.d0
+
+      print *, "====== Using samplig of MC simulation ======"
+
+c     Pressure tail correction assuming constant g(r) = 1 for LJ potential
+      dP = 16.d0*pi*(rho ** 2)*(1**6)*1/(3.d0 * (rc**3))
+     & * ((1.d0/3.d0)*(1/rc)**6 - 1.d0)
+
+      dU = 8.d0*pi/3.d0 * rho  * npart *(1.d0/3.d0 * (1.d0/rc)**6 - 1) 
+     & * (1.d0/rc)**3
+
+      print *, 'Energy correction: ', dU
+      print *, 'Pressure correction: ', dP
+
 
       call stats(U_vals, isample, uAvg, uStd)
       call stats(P_vals, isample, pAvg, pStd)
@@ -145,6 +151,8 @@ c     6. Saving last configuration in A and A/ps
 
       dU_int = 8.d0*pi/3.d0 * rho* npart *(1.d0/3.d0 * (1.d0/rc)**6 - 1) 
      & * (1.d0/rc)**3
+
+      print *, "====== Using integration of g(r) ======"
 
       print *, 'Energy correction for integrated U: ', dU_int
       print *, 'Pressure correction for integrated P: ', dP_int

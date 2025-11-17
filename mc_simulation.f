@@ -11,6 +11,7 @@
 c     1. Defining dimensions
  
       dimension r(3,1000), U_vals(1000), P_vals(1000), g(1000)
+      dimension Ur(1000), dUdr(1000), rhis(1000)
 
 c     2. Reading data and computing related quantities
 
@@ -78,7 +79,7 @@ c     Pressure tail correction assuming constant g(r) = 1 for LJ potential
 
          if (mod(icycle, nsamp) == 0) then
             call sampleVals(isample, npart, nhis, r, rc, box, beta,
-     &                  U_vals, P_vals, g, dU, dP)
+     &                  U_vals, P_vals, g)
          endif
          if (isample>1000) then
             print *, "Too many samples!"
@@ -100,6 +101,8 @@ c     Pressure tail correction assuming constant g(r) = 1 for LJ potential
 
       call stats(U_vals, isample, uAvg, uStd)
       call stats(P_vals, isample, pAvg, pStd)
+      uAvg = uAvg + dU
+      pAvg = pAvg + dP
 
       print *, 'U mean: ', uAvg, "std: ", uStd, " (", 
      &      int(100*uStd/uAvg), "% )"
@@ -120,10 +123,37 @@ c     6. Saving last configuration in A and A/ps
 
       delg = box/(2.d0*nhis) ! bin size
       do is = 1, nhis
+            rhis(is) = delg*(dfloat(is-1)+0.5d0)
             vb = ((is+1)**3 - is**3)*delg**3
-            rnid = (4.d0/3.d0)*3.14159265359*vb*rho
+            rnid = (4.d0/3.d0)*pi*vb*rho
             g(is) = g(is) /(isample * npart*rnid)
+
+            Ur(is) = g(is) * 4.d0/rhis(is)**4 * (1/rhis(is)**6 - 1) ! El integrando de la U, es decir, U(r)*r^2 * g
+            dUdr(is) = g(is) * 24.d0/rhis(is)**4 * (-2/rhis(is)**6 + 1) ! El integrando de la P, es decir, dU/dr * r^3 * g
       end do
+
+      ! Hacemos la integrales
+
+      U_int = 2.d0*pi*rho*npart*tegrate_simpson(Ur, delg, nhis)
+      P_int = rho/beta
+     & - 2.d0*pi/3.d0 * rho**2 * tegrate_simpson(dUdr, delg, nhis)
+      
+      ! Tail corrections para la U, P integradas (muy parecidas a las de antes pero con un rc distinto)
+      rc = rhis(nhis)
+      dP_int = 16.d0*pi*(rho ** 2)*(1**6)*1/(3.d0 * (rc**3)) 
+     & * ((1.d0/3.d0)*(1/rc)**6 - 1.d0)
+
+      dU_int = 8.d0*pi/3.d0 * rho* npart *(1.d0/3.d0 * (1.d0/rc)**6 - 1) 
+     & * (1.d0/rc)**3
+
+      print *, 'Energy correction for integrated U: ', dU_int
+      print *, 'Pressure correction for integrated P: ', dP_int
+
+
+      U_int = U_int + dU_int
+      P_int = P_int + dP_int
+      print*, "Total energy using integration, U = ", U_int 
+      print*, "Total pressure using integration, P = ", P_int 
 
       open(5,file='g.data',status='unknown')
       do is = 1,nhis
@@ -200,17 +230,8 @@ c      call boundaryConds(npart, rn, box)
 
 
       ! Energy difference
-c      call getValues(npart, nhis, r0, box, rc, U0, Pkin, g)
-c      call getValues(npart, nhis, rn, box, rc, Un, Pkin, g)
-c      call Energy(npart, r0, iSel, box, rc, U0)
-c      call Energy(npart, rn, iSel, box, rc, Un)
       call deltaEnergy(npart, r0, rn, iSel, box, rc, deltaU)
-c      deltaU2=Un-U0
-
-
-c      deltaU = U0 - Un
       acc = exp(-beta*deltaU) ! Acceptance probability.
-c     If deltaU<0 -> -beta*deltaU >0 -> acc > 0
 
       roll = rand()
       if(roll<= acc) then
@@ -258,34 +279,6 @@ c      atom-atom interactions
 
 *********************************************************
 *********************************************************
-c              subroutine deltaEnergy
-*********************************************************
-*********************************************************
-      subroutine Energy(npart, r0, iSel,box, rc, u)
-      implicit double precision(a-h,o-z)
-      dimension rn(3,1000), r0(3,1000), g(1000)
-c     This subroutine calculates the energy difference between two
-c     configurations where the only difference is particle i
-
-
-      U = 0.d0
-
-c     atom-atom interactions
-
-      do js = 1,npart
-         if (js == iSel)  then
-            cycle
-         else
-            call lj(iSel, js, r0, rr, box, rc, dU, Pkin)
-            U = U + dU
-
-         end if
-      end do
-      return
-      end
-
-*********************************************************
-*********************************************************
 c              subroutine getValues
 *********************************************************
 *********************************************************
@@ -298,6 +291,7 @@ c     This subroutine calculates the energy of a configuration
       Utot = 0.d0
       Pkin = 0.d0
       rr = 0.d0
+      delg = box/(2.d0*nhis) ! bin size
 
 
 c      atom-atom interactions
@@ -307,32 +301,17 @@ c         print *, 'Atom ', is, ' coords = ', r(1,is), r(2,is), r(3,is)
             call lj(is,js,r, rr, box,rc,Uij,rFij)
             Utot = Utot + Uij
             Pkin = Pkin + rFij/(3*box**3)
-            delg = box/(2.d0*nhis) ! bin size
 
             ig = int(rr/delg)
 
             if(rr < box/2.d0) then
                if (ig>0) then
                      g(ig) = g(ig) + 2
-             !        write(6, *) is, js, rr, ig, delg
-
                endif
             endif
          end do
       end do
-
-
-
-
-
-
-
-      return
       end
-
-*********************************************************
-*********************************************************
-c              subroutine Lennard-Jones
 *********************************************************
 *********************************************************
       subroutine lj(is,js,r, rr, box,rc,Uij, rFij)
@@ -392,11 +371,11 @@ c              subroutine sample
 *********************************************************
 *********************************************************
       subroutine sampleVals(isample, npart, nhis, r, rc, box, beta,
-     &                  U_vals, P_vals, g, dU, dP)
+     &                  U_vals, P_vals, g)
 
       implicit double precision(a-h,o-z)
       dimension r(3,1000), U_vals(1000), P_vals(1000), g(1000)
-      write(6, *) "Sample: ", isample
+      ! write(6, *) "Sample: ", isample
       Utot = 0.d0
       Pkin = 0.d0
       rho = npart/box**3
@@ -405,8 +384,8 @@ c              subroutine sample
       
 
 
-      U_vals(isample) = Utot + dU
-      P_vals(isample) = Pkin + rho/beta + dP
+      U_vals(isample) = Utot
+      P_vals(isample) = Pkin + rho/beta
 
       isample = isample + 1
 
@@ -432,3 +411,27 @@ c              functions
       enddo
       std = sqrt(x2 - avg**2)
       end 
+*********************************************************
+*********************************************************
+c              functions
+*********************************************************
+*********************************************************
+      double precision function tegrate_simpson(x, dt, N) ! Formula de Simpson
+      implicit none
+
+      integer, intent(in) :: N
+      integer :: i
+      double precision, dimension(1000), intent(in) :: x(1:1000)
+      double precision, intent(in) :: dt
+
+    
+
+      tegrate_simpson = 0.0
+
+      do i = 2, N-1, 2
+            tegrate_simpson = tegrate_simpson + 
+     &      dt * (1.0/3.0* x(i-1) + 4.0/3.0 * x(i)+ 1.0/3.0 * x(i+1))
+      end do
+
+      return
+      end

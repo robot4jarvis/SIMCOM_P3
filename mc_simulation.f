@@ -28,7 +28,6 @@ c     2. Reading data and computing related quantities
 
 
       close(1)
-      box = 0.d0
       nf = 3*npart-3 !number of degrees of freedom 
       beta = 1.d0 / tref
 
@@ -39,7 +38,7 @@ c     3. Reading initial configuration (positions, velocities) in A and A/ps
          read(2,*) (r(l,is),l=1,3)
          read(2,*) 
       end do         
-c      read(2,*) box
+      read(2,*) boxin
       close(2)
 c     
 
@@ -54,7 +53,7 @@ c
 c
 c     4. Change to reduced units
 
-      call reduced(npart,r,box,sigma)
+      call reduced(npart,r,boxin,sigma)
       box = (npart/rho)**(1/3.d0)
 
 c     5. Start the loop to generate new configurations 
@@ -66,12 +65,18 @@ c     5. Start the loop to generate new configurations
       pi = 4.d0*DATAN(1.d0)
       rho = npart / (box**3)
 
-c     Stabilize
-c      do icycle = 1, 10000
-c            call moveparticle(npart, r, rc, box, deltax, beta, isuccess)
-c      enddo  
+      ratio=box/boxin
+      do is=1, npart
+            do l=1,3
+                  r(is,l)=r(is,l)*ratio
+            enddo
+      enddo
+c     Pressure tail correction assuming constant g(r) = 1 for LJ potential
+      dP = 16.d0*pi*(rho ** 2)*(1**6)*1/(3.d0 * (rc**3))
+     & * ((1.d0/3.d0)*(1/rc)**6 - 1.d0)
 
-      isuccess = 0
+      dU = 8.d0*pi/3.d0 * rho  * npart *(1.d0/3.d0 * (1.d0/rc)**6 - 1) 
+     & * (1.d0/rc)**3
 
 
       do icycle = 1,ncycles
@@ -79,7 +84,7 @@ c      enddo
 
          if (mod(icycle, nsamp) == 0) then
             call sampleVals(isample, npart, nhis, r, rc, box, beta,
-     &                  U_vals, P_vals, g)
+     &                  U_vals, P_vals, dU, dP, g)
          endif
          if (isample>1000) then
             print *, "Too many samples!"
@@ -95,7 +100,10 @@ c      enddo
       print *, 'Number of cycles:', icycle
       print *, 'Reduced density:', rho
       print *, 'Reduced temperature:', tref
-      print *, 'Reduced cutoff:', rc
+      print *, 'Reduced cutoff: ', rc
+      print *, 'Reduced box: ', box
+      print *, 'Reduced ratio: ', ratio
+       
 
 
       uAvg = 0.d0
@@ -105,12 +113,7 @@ c      enddo
 
       print *, "====== Using samplig of MC simulation ======"
 
-c     Pressure tail correction assuming constant g(r) = 1 for LJ potential
-      dP = 16.d0*pi*(rho ** 2)*(1**6)*1/(3.d0 * (rc**3))
-     & * ((1.d0/3.d0)*(1/rc)**6 - 1.d0)
 
-      dU = 8.d0*pi/3.d0 * rho  * npart *(1.d0/3.d0 * (1.d0/rc)**6 - 1) 
-     & * (1.d0/rc)**3
 
       print *, '  -  Energy tail correction: ', dU
       print *, '  -  Pressure tail correction: ', dP
@@ -118,8 +121,6 @@ c     Pressure tail correction assuming constant g(r) = 1 for LJ potential
 
       call stats(U_vals, isample, uAvg, uStd)
       call stats(P_vals, isample, pAvg, pStd)
-      uAvg = uAvg + dU
-      pAvg = pAvg + dP
 
       print *, '  -  Energy mean: ', uAvg, "std: ", uStd, " (", 
      &      int(100*uStd/uAvg), "% )"
@@ -132,7 +133,7 @@ c     Pressure tail correction assuming constant g(r) = 1 for LJ potential
 
 c     6. Saving last configuration in A and A/ps 
 
-      open(11,file='newconf.data',status='unknown')
+      open(11,file='leap-conf.data',status='unknown')
       do is = 1,npart
          write(11,*) (r(l,is)*sigma,l=1,3)
          write(11,*) ! Write empty line
@@ -148,7 +149,9 @@ c     6. Saving last configuration in A and A/ps
             g(is) = g(is) /(isample * npart*rnid)
 
             Ur(is) = g(is) * 4.d0/rhis(is)**4 * (1/rhis(is)**6 - 1) ! El integrando de la U, es decir, U(r)*r^2 * g
-            dUdr(is) = g(is) * 24.d0/rhis(is)**4 * (-2/rhis(is)**6 + 1) ! El integrando de la P, es decir, dU/dr * r^3 * g
+            dUdr(is) = g(is) * 24.d0/rhis(is)**4 * (-2.0d0/rhis(is)**6 
+     & + 1) ! El integrando de la P, es decir, dU/dr * r^3 * g(r)
+
       end do
 
       ! Hacemos la integrales
@@ -157,12 +160,12 @@ c     6. Saving last configuration in A and A/ps
 c      U_int = 2.d0*pi*rho*npart*quadrature(Ur, rhis, nhis)
 c      P_int = rho/beta 
 c     & - 2.d0*pi/3.d0 * rho**2 * quadrature(dUdr, rhis, nhis)
-      P_int = rho/beta
-     & - 2.d0*pi/3.d0 * rho**2 * tegrate_simpson(dUdr, delg, nhis)
+      P_int = rho/beta 
+     & - 2.d0*pi/(3*box**3) * rho**2 * tegrate_simpson(dUdr, delg, nhis)
       
       ! Tail corrections para la U, P integradas (muy parecidas a las de antes pero con un rc distinto)
       rc = rhis(nhis)
-      dP_int = 16.d0*pi*(rho ** 2)*(1**6)*1/(3.d0 * (rc**3)) 
+      dP_int = 16.d0*pi*(rho ** 2)*(1**6)*1/(3.d0 * (rc**3))
      & * ((1.d0/3.d0)*(1/rc)**6 - 1.d0)
 
       dU_int = 8.d0*pi/3.d0 * rho* npart *(1.d0/3.d0 * (1.d0/rc)**6 - 1) 
@@ -180,11 +183,12 @@ c     & - 2.d0*pi/3.d0 * rho**2 * quadrature(dUdr, rhis, nhis)
       print*, "  -  Pressure integrated: ", P_int 
       print*, "  -  Energy per particle: ", U_int/nPart
 
-c      print *, "====== DATA FROM EXERCISE 2 ======"
+      print *, "====== DATA FROM PRACTISE 2 ======"
 
-c      print *, '  -  Energy: -3023.52107866799'
-c      print *, '  -  Pressure: -0.252452629317419'
-c      print *, '  -  Temperature: 0.712296568323566 '
+      print *, '  -  Energy: -3023.52107866799'
+      print *, '  -  Energy per particle: ', -3023.52107866799/nPart
+      print *, '  -  Pressure: -0.252452629317419'
+      print *, '  -  Temperature: 0.712296568323566 '
 
 
 
@@ -408,7 +412,7 @@ c              subroutine sample
 *********************************************************
 *********************************************************
       subroutine sampleVals(isample, npart, nhis, r, rc, box, beta,
-     &                  U_vals, P_vals, g)
+     &                  U_vals, P_vals, dU, dP, g)
 
       implicit double precision(a-h,o-z)
       dimension r(3,1000), U_vals(1000), P_vals(1000), g(1000)
@@ -421,8 +425,8 @@ c              subroutine sample
       
 
 
-      U_vals(isample) = Utot
-      P_vals(isample) = Pkin + rho/beta
+      U_vals(isample) = Utot +dU
+      P_vals(isample) = Pkin + rho/beta + dP
 
       isample = isample + 1
 

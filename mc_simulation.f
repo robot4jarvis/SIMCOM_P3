@@ -143,30 +143,26 @@ c     6. Saving last configuration in A and A/ps
 
       delg = box/(2.d0*nhis) ! bin size
       do is = 1, nhis
-            rhis(is) = delg*(dfloat(is-1)+0.5d0)
+            rr = delg*(dfloat(is-1)+0.5d0)
+            yr = 1.d0/rr
+            rhis(is) = rr
             vb = ((is+1)**3 - is**3)*delg**3
             rnid = (4.d0/3.d0)*pi*vb*rho
             g(is) = g(is) /(isample * npart*rnid)
 
-            Ur(is) = g(is) * 4.d0/rhis(is)**4 * (1/rhis(is)**6 - 1) ! El integrando de la U, es decir, U(r)*r^2 * g
-            dUdr(is) = g(is) * 24.d0/rhis(is)**4 * (-2.0d0/rhis(is)**6 
-     & + 1) ! El integrando de la P, es decir, dU/dr * r^3 * g(r)
-
+            Ur(is) = g(is) * 4.d0/rr**4 * (1/rr**6 - 1) ! El integrando de la U, es decir, U(r)*r^2 * g
+       dUdr(is) = g(is) * 24.d0 * yr**7* (-2.0d0*yr**6 + 1.d0) * rr**3
       end do
 
       ! Hacemos la integrales
 
-      U_int = 2.d0*pi*rho*npart*tegrate_simpson(Ur, delg, nhis)
-c      U_int = 2.d0*pi*rho*npart*quadrature(Ur, rhis, nhis)
-c      P_int = rho/beta 
-c     & - 2.d0*pi/3.d0 * rho**2 * quadrature(dUdr, rhis, nhis)
-      P_int = rho/beta 
-     & - 2.d0*pi/(3*box**3) * rho**2 * tegrate_simpson(dUdr, delg, nhis)
+      uInt = 2.d0*pi*rho*npart*tegrate_simpson(Ur, delg, nhis)
+      pInt = rho/beta 
+     & - 2.d0*pi/(3.d0) * rho**2 * tegrate_simpson(dUdr, delg, nhis)
       
       ! Tail corrections para la U, P integradas (muy parecidas a las de antes pero con un rc distinto)
       rc = rhis(nhis)
-      dP_int = 16.d0*pi*(rho ** 2)*(1**6)*1/(3.d0 * (rc**3))
-     & * ((1.d0/3.d0)*(1/rc)**6 - 1.d0)
+      dP_int = 16.d0/3.d0 *pi*rho**2* ((2.d0/3.d0)*rc**(-9) - rc**(-3))
 
       dU_int = 8.d0*pi/3.d0 * rho* npart *(1.d0/3.d0 * (1.d0/rc)**6 - 1) 
      & * (1.d0/rc)**3
@@ -177,18 +173,18 @@ c     & - 2.d0*pi/3.d0 * rho**2 * quadrature(dUdr, rhis, nhis)
       print *, '  -  Pressure tail correction: ', dP_int
 
 
-      U_int = U_int + dU_int
-      P_int = P_int + dP_int
-      print*, "  -  Energy integrated: ", U_int 
-      print*, "  -  Pressure integrated: ", P_int 
-      print*, "  -  Energy per particle: ", U_int/nPart
+      uInt = uInt + dU_int
+      pInt = pInt + dP_int
+      print*, "  -  Energy integrated: ", uInt 
+      print*, "  -  Pressure integrated: ", pInt 
+      print*, "  -  Energy per particle: ", uInt/nPart
 
-      print *, "====== DATA FROM PRACTISE 2 ======"
-
-      print *, '  -  Energy: -3023.52107866799'
-      print *, '  -  Energy per particle: ', -3023.52107866799/nPart
-      print *, '  -  Pressure: -0.252452629317419'
-      print *, '  -  Temperature: 0.712296568323566 '
+c      print *, "====== DATA FROM PRACTISE 2 ======"
+c
+c      print *, '  -  Energy: -3023.52107866799'
+c      print *, '  -  Energy per particle: ', -3023.52107866799/nPart
+c      print *, '  -  Pressure: -0.252452629317419'
+c      print *, '  -  Temperature: 0.712296568323566 '
 
 
 
@@ -214,6 +210,16 @@ c     Average Pressure:  -0.252452629317419
          write(8,*) is, P_vals(is)
       end do         
       close(8)
+
+100   FORMAT(F5.3, 3X, F5.3, 6(3X, F8.4))
+      open(20, file='data.dat', position="append", action = 'write')
+      uAvg = uAvg/nPart
+      uStd = uStd/nPart
+      uInt = uInt/nPart
+
+      
+      write(20, 100) rho, tref, uAvg, uStd, uInt, pAvg, pStd, pInt
+      close(20)
 
       stop
       end
@@ -354,6 +360,9 @@ c         print *, 'Atom ', is, ' coords = ', r(1,is), r(2,is), r(3,is)
          end do
       end do
       end
+*********************************************************
+*********************************************************
+c              subroutine lj
 *********************************************************
 *********************************************************
       subroutine lj(is,js,r, rr, box,rc,Uij, rFij)

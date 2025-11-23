@@ -143,10 +143,10 @@ c     6. Saving last configuration in A and A/ps
 
       delg = box/(2.d0*nhis) ! bin size
       do is = 1, nhis
-            rr = delg*(dfloat(is-1)+0.5d0)
+            rr = delg*(dfloat(is)+0.5d0)
             yr = 1.d0/rr
             rhis(is) = rr
-            vb = ((is+1)**3 - is**3)*delg**3
+            vb = ((is+1)**3 - (is)**3)*delg**3
             rnid = (4.d0/3.d0)*pi*vb*rho
             g(is) = g(is) /(isample * npart*rnid)
 
@@ -211,15 +211,20 @@ c     Average Pressure:  -0.252452629317419
       end do         
       close(8)
 
-100   FORMAT(F5.3, 3X, F5.3, 6(3X, F8.4))
+100   FORMAT(F5.3, 3X, F5.3, 3X, F5.1, 3X, F5.3, 3X, F5.3, 6(3X, F8.4))
+c200   FORMAT(F5.3, T1, F5.3, T1, F5.1, T1, F5.3, T1, F5.3, 6(T1, F8.4))
       open(20, file='data.dat', position="append", action = 'write')
+      acpt = abs(100*isuccess/ncycles)
       uAvg = uAvg/nPart
       uStd = uStd/nPart
       uInt = uInt/nPart
+      ecycles = log10(1.d0*(icycle-1))
 
       
-      write(20, 100) rho, tref, uAvg, uStd, uInt, pAvg, pStd, pInt
+      write(20, 100) ecycles, deltax, acpt, 
+     & rho, tref, uAvg, uStd, uInt, pAvg, pStd, pInt
       close(20)
+
 
       stop
       end

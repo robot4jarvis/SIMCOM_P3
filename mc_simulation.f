@@ -211,7 +211,7 @@ c     Average Pressure:  -0.252452629317419
       end do         
       close(8)
 
-100   FORMAT(F5.3, 3X, F5.3, 3X, F5.1, 3X, F5.3, 3X, F5.3, 6(3X, F8.4))
+100   FORMAT(F5.3, 3X, F5.3, 3X, F5.1, 3X, F5.3, 3X, F5.3, 6(3X, F9.5))
 c200   FORMAT(F5.3, T1, F5.3, T1, F5.1, T1, F5.3, T1, F5.3, 6(T1, F8.4))
       open(20, file='data.dat', position="append", action = 'write')
       acpt = abs(100*isuccess/ncycles)
